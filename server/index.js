@@ -131,14 +131,30 @@ api.post('/fees/pay', (req, res) => {
   };
 
   state.daybookLedger.unshift(entry);
+  // Update student paid amount
+  student.paidAmount = Number((student.paidAmount + total).toFixed(2));
 
+  // Append to student's payment history (newest first)
+  student.paymentHistory.unshift({
+    date: todayISO(),
+    amount: total,
+    mode: entry.mode,
+    receiptNo,
+    cash,
+    upi,
+  });
+
+  // Rule 5: Recalculate remaining dues & clear exam block if fully settled
+  const netTuition = Math.round(student.tuition * (1 - student.scholarshipPct / 100) * 100) / 100;
+  const remainingDues = Math.round((netTuition + student.lateFine - student.paidAmount) * 100) / 100;
+  student.examBlocked = remainingDues > 0;
   appendAudit(
     'FEE_PAYMENT',
     `${receiptNo} ${entry.mode} INR ${total.toLocaleString('en-IN')} for ${student.name} (${student.id})`,
     body.role ?? 'ADMIN',
   );
 
-  res.json({ success: true, receipt: entry });
+  res.json({ success: true, receipt: entry, student });
 });
 
 api.post('/fees/waive-fine', (req, res) => {

@@ -90,7 +90,16 @@ export default function App() {
       showToast(resetError.message, 'error');
     }
   }
-
+  const handlePaymentSuccess = useCallback(({ student, receipt }) => {
+    setData((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        students: previous.students.map((item) => (item.id === student.id ? student : item)),
+        daybookLedger: receipt ? [receipt, ...previous.daybookLedger] : previous.daybookLedger,
+      };
+    });
+  }, []);
   const counts = useMemo(() => {
     const students = data?.students ?? [];
     return {
@@ -154,9 +163,8 @@ export default function App() {
                   type="button"
                   onClick={() => handleRoleChange(item)}
                   title={ROLE_HINTS[item]}
-                  className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition ${
-                    role === item ? 'bg-white text-brand-700 shadow-sm' : 'text-brand-100 hover:bg-white/10'
-                  }`}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition ${role === item ? 'bg-white text-brand-700 shadow-sm' : 'text-brand-100 hover:bg-white/10'
+                    }`}
                 >
                   {ROLE_LABELS[item]}
                 </button>
@@ -194,9 +202,8 @@ export default function App() {
                   key={module.id}
                   type="button"
                   onClick={() => setActiveModule(module.id)}
-                  className={`flex items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
-                    active ? 'border-white text-white' : 'border-transparent text-brand-100 hover:text-white'
-                  }`}
+                  className={`flex items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${active ? 'border-white text-white' : 'border-transparent text-brand-100 hover:text-white'
+                    }`}
                 >
                   <Icon className="h-4 w-4" />
                   {module.label}
@@ -226,6 +233,7 @@ export default function App() {
             role={role}
             onAudit={pushAudit}
             onToast={showToast}
+            onPaymentSuccess={handlePaymentSuccess}
           />
         )}
         {activeModule === 'ledger' && (
@@ -243,13 +251,12 @@ export default function App() {
 
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-[60] max-w-sm rounded-lg border px-4 py-2.5 text-sm shadow-xl ${
-            toast.tone === 'error'
-              ? 'border-rose-200 bg-rose-50 text-rose-700'
-              : toast.tone === 'info'
-                ? 'border-slate-200 bg-white text-slate-700'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-          }`}
+          className={`fixed bottom-5 right-5 z-[60] max-w-sm rounded-lg border px-4 py-2.5 text-sm shadow-xl ${toast.tone === 'error'
+            ? 'border-rose-200 bg-rose-50 text-rose-700'
+            : toast.tone === 'info'
+              ? 'border-slate-200 bg-white text-slate-700'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
         >
           {toast.message}
         </div>

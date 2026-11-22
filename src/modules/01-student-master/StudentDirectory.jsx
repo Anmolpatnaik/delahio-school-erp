@@ -156,8 +156,10 @@ export default function StudentDirectory({ students, role }) {
                   </td>
                   <td className="px-3 py-2 text-right text-slate-700">{formatINR(student.tuition)}</td>
                   <td className="px-3 py-2 text-right text-slate-700">{formatINR(student.paidAmount)}</td>
-                  <td className={`px-3 py-2 text-right font-semibold ${dues.pending > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    {formatINR(dues.pending)}
+                  <td className={`px-3 py-2 text-right font-semibold ${dues.pending > 0 ? 'text-rose-600' : dues.pending < 0 ? 'text-violet-600' : 'text-emerald-600'}`}>
+                    {dues.pending < 0
+                      ? `Credit ₹${Math.abs(dues.pending).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : formatINR(dues.pending)}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">

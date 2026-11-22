@@ -8,7 +8,7 @@ export const toNumber = (value, fallback = 0) => {
 export function formatINR(value) {
   const amount = toNumber(value);
   const sign = amount < 0 ? '-' : '';
-  return `${sign}\u20B9${Math.abs(amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  return `${sign}\u20B9${Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function formatPercent(value) {
@@ -27,13 +27,16 @@ export function calculateStudentDues(student) {
   const paidAmount = toNumber(student.paidAmount);
   const scholarshipPct = toNumber(student.scholarshipPct);
 
-  const netPayable = (tuition + lateFine - paidAmount) * (1 - scholarshipPct / 100);
+  const netTuition = round2(tuition * (1 - scholarshipPct / 100));
+  const amountDue = round2(netTuition + lateFine - paidAmount);
 
   return {
-    grossPayable: tuition + lateFine,
-    netPayable,
-    pending: netPayable,
-    isDefaulter: netPayable > 0,
+    grossPayable: round2(tuition + lateFine),
+    netTuition,
+    netPayable: amountDue,
+    pending: amountDue,
+    isDefaulter: amountDue > 0,
+    isCredit: amountDue < 0,
   };
 }
 

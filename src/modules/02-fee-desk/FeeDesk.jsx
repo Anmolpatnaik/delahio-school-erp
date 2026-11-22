@@ -12,7 +12,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { formatINR } from '../../core/currencyMath';
+import { calculateStudentDues, formatINR, round2 } from '../../core/currencyMath';
 import { can } from '../../core/permissions';
 import { postBulkRemind, postPayment, postWaiveFine } from '../../core/api';
 import { recordAudit } from '../../core/auditLogger';
@@ -28,14 +28,9 @@ const STATUS_OPTIONS = [
 
 const EMPTY_DRAFT = { pay: '', discount: '', waive: false };
 
-function duesFor(student) {
-  const tuitionAfterScholarship = student.tuition * (1 - student.scholarshipPct / 100);
-  const pending = tuitionAfterScholarship + student.lateFine - student.paidAmount;
-  const collectedPct = tuitionAfterScholarship > 0 ? Math.round((student.paidAmount / tuitionAfterScholarship) * 100) : 100;
-  return { tuitionAfterScholarship, pending, collectedPct };
-}
 
-export default function FeeDesk({ students, school, role, onAudit, onToast }) {
+
+export default function FeeDesk({ students, school, role, onAudit, onToast, onPaymentSuccess }) {
   const [rows, setRows] = useState(students);
   const [query, setQuery] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
@@ -56,7 +51,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
     return rows.filter((student) => {
       if (classFilter !== 'ALL' && student.className !== classFilter) return false;
 
-      const { pending } = duesFor(student);
+      const { pending } = calculateStudentDues(student);
       if (statusFilter === 'OVERDUE' && pending <= 0) return false;
       if (statusFilter === 'CLEARED' && pending !== 0) return false;
       if (statusFilter === 'CREDIT' && pending >= 0) return false;
@@ -68,8 +63,8 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
 
   const active = rows.find((student) => student.id === activeId) ?? null;
 
-  const pendingBook = rows.reduce((total, student) => total + duesFor(student).pending, 0);
-  const defaulters = rows.filter((student) => duesFor(student).pending > 0).length;
+  const pendingBook = rows.reduce((total, student) => total + calculateStudentDues(student).pending, 0);
+  const defaulters = rows.filter((student) => calculateStudentDues(student).pending > 0).length;
 
   const columns = useMemo(() => {
     const base = [
@@ -85,7 +80,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
       { key: 'fine', label: 'Fine' },
       { key: 'paid', label: 'Paid' },
       { key: 'pending', label: 'Pending' },
-      { key: 'progress', label: 'Collected' },
+
       { key: 'payAmount', label: 'Pay amount' },
       { key: 'discount', label: 'Discount' },
       { key: 'waive', label: 'Waive fine' },
@@ -130,10 +125,10 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
       previous.map((row) =>
         row.id === studentId
           ? {
-              ...row,
-              paidAmount: row.paidAmount + delta,
-              lateFine: waiveFine ? 0 : row.lateFine,
-            }
+            ...row,
+            paidAmount: row.paidAmount + delta,
+            lateFine: waiveFine ? 0 : row.lateFine,
+          }
           : row,
       ),
     );
@@ -142,7 +137,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
   async function collect(student, payload) {
     setBusyId(student.id);
     try {
-      const receipt = await postPayment({
+      const result = await postPayment({
         studentId: student.id,
         cash: payload.cash,
         upi: payload.upi,
@@ -151,7 +146,10 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
         role,
       });
 
-      optimisticApply(student.id, payload.cash, payload.upi, payload.waiveFine);
+      // Synchronize canonical server state across App, Fee Desk, and sibling modules
+      if (onPaymentSuccess && result.student) {
+        onPaymentSuccess({ student: result.student, receipt: result.receipt });
+      }
 
       if (payload.waiveFine && student.lateFine > 0) {
         await postWaiveFine({ studentId: student.id, role });
@@ -159,11 +157,11 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
 
       const entry = await recordAudit({
         action: 'FEE_PAYMENT',
-        detail: `${receipt.receipt.receiptNo} ${receipt.receipt.mode} ${formatINR(receipt.receipt.total)} for ${student.name}`,
+        detail: `${result.receipt.receiptNo} ${result.receipt.mode} ${formatINR(result.receipt.total)} for ${student.name}`,
         role,
       });
       onAudit(entry);
-      onToast(`${student.name}: receipt ${receipt.receipt.receiptNo} generated`);
+      onToast(`${student.name}: receipt ${result.receipt.receiptNo} generated`);
       setForm({ cash: '', upi: '', discount: '', waiveFine: false, note: '' });
     } catch (error) {
       onToast(error.message, 'error');
@@ -311,16 +309,15 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden border-y border-slate-200 bg-white">
-        <table className="w-[2680px] table-fixed border-collapse text-left text-xs">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto border-y border-slate-200 bg-white">
+        <table className="w-full border-collapse text-left text-xs">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`border-b border-slate-200 px-2 py-2 font-semibold ${
-                    column.key === 'select' ? 'w-10' : ''
-                  } ${['tuition', 'scholarship', 'fine', 'paid', 'pending'].includes(column.key) ? 'text-right' : ''}`}
+                  className={`border-b border-slate-200 px-2 py-2 font-semibold ${column.key === 'select' ? 'w-10' : ''
+                    } ${['tuition', 'scholarship', 'fine', 'paid', 'pending'].includes(column.key) ? 'text-right' : ''}`}
                 >
                   {column.key === 'select' ? (
                     <input
@@ -339,16 +336,15 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
           </thead>
           <tbody>
             {visibleRows.map((student) => {
-              const rowDues = duesFor(student);
+              const rowDues = calculateStudentDues(student);
               const draft = draftFor(student.id);
               const isSelected = selected.has(student.id);
 
               return (
                 <tr
                   key={student.id}
-                  className={`border-b border-slate-100 align-top ${
-                    isSelected ? 'bg-brand-50/60' : 'hover:bg-slate-50'
-                  }`}
+                  className={`border-b border-slate-100 align-top ${isSelected ? 'bg-brand-50/60' : 'hover:bg-slate-50'
+                    }`}
                 >
                   <td className="px-2 py-2">
                     <input
@@ -375,18 +371,12 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
                   <td className="px-2 py-2 text-right text-slate-700">{student.scholarshipPct}%</td>
                   <td className="px-2 py-2 text-right text-slate-700">{formatINR(student.lateFine)}</td>
                   <td className="px-2 py-2 text-right text-slate-700">{formatINR(student.paidAmount)}</td>
-                  <td className="px-2 py-2 text-right font-semibold text-rose-600">{formatINR(rowDues.pending)}</td>
-                  <td className="px-2 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-16 rounded-full bg-slate-200">
-                        <div
-                          className={`h-1.5 rounded-full ${rowDues.collectedPct >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                          style={{ width: `${rowDues.collectedPct}%` }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-slate-500">{rowDues.collectedPct}%</span>
-                    </div>
+                  <td className={`px-2 py-2 text-right font-semibold ${rowDues.pending > 0 ? 'text-rose-600' : rowDues.pending < 0 ? 'text-violet-600' : 'text-emerald-600'}`}>
+                    {rowDues.pending < 0
+                      ? `Credit ₹${Math.abs(rowDues.pending).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : formatINR(rowDues.pending)}
                   </td>
+
                   <td className="px-2 py-2">
                     <input
                       type="number"
@@ -499,7 +489,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
               </div>
             </div>
 
-            <div className="flex-1 px-4 py-3">
+            <div className="flex-1 overflow-y-auto min-h-0 px-4 py-3">
               <p className="rounded-md bg-slate-50 px-2 py-1.5 text-[11px] leading-snug text-slate-600">{active.address}</p>
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
@@ -521,9 +511,15 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
                   <p className="text-slate-500">Paid to date</p>
                   <p className="font-semibold text-slate-800">{formatINR(active.paidAmount)}</p>
                 </div>
-                <div className="col-span-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5">
-                  <p className="text-rose-600">Pending balance</p>
-                  <p className="text-sm font-semibold text-rose-700">{formatINR(duesFor(active).pending)}</p>
+                <div className={`col-span-2 rounded-md border px-2 py-1.5 ${calculateStudentDues(active).pending < 0 ? 'border-violet-200 bg-violet-50' : 'border-rose-200 bg-rose-50'}`}>
+                  <p className={calculateStudentDues(active).pending < 0 ? 'text-violet-600' : 'text-rose-600'}>
+                    {calculateStudentDues(active).pending < 0 ? 'Credit / Refund Due' : 'Pending balance'}
+                  </p>
+                  <p className={`text-sm font-semibold ${calculateStudentDues(active).pending < 0 ? 'text-violet-700' : 'text-rose-700'}`}>
+                    {calculateStudentDues(active).pending < 0
+                      ? `₹${Math.abs(calculateStudentDues(active).pending).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : formatINR(calculateStudentDues(active).pending)}
+                  </p>
                 </div>
               </div>
 
@@ -636,12 +632,12 @@ export default function FeeDesk({ students, school, role, onAudit, onToast }) {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={busyId === active.id}
+                  disabled={busyId === active.id || calculateStudentDues(active).pending <= 0}
                   onClick={() => submitDetailPayment(active)}
                   className="flex flex-1 items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-300"
                 >
                   <Receipt className="h-4 w-4" />
-                  Record payment
+                  {calculateStudentDues(active).pending <= 0 ? 'No payment due' : 'Record payment'}
                 </button>
                 <button
                   type="button"
