@@ -178,6 +178,15 @@ api.post('/fees/waive-fine', (req, res) => {
   if (!student) {
     return res.status(404).json({ success: false, error: 'Student record not found' });
   }
+
+  const rawReason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!rawReason) {
+    return res.status(400).json({
+      success: false,
+      error: 'A written reason is required to waive a late fine.',
+    });
+  }
+
   if (!roleCan(body.role, 'waiveFine')) {
     return res.status(403).json({ success: false, error: 'Your role cannot waive fines.' });
   }
@@ -185,15 +194,13 @@ api.post('/fees/waive-fine', (req, res) => {
   const waived = student.lateFine;
   student.lateFine = 0;
 
-  appendAudit(
-    'FEE_WAIVE',
-    waived > 0
-      ? `Late fine INR ${waived.toLocaleString('en-IN')} waived for ${student.name} (${student.id})`
-      : `Fine waiver requested for ${student.name} (${student.id}) - nothing to waive`,
-    body.role ?? 'ADMIN',
-  );
+  const detail = waived > 0
+    ? `Late fine INR ${waived.toLocaleString('en-IN')} waived for ${student.name} (${student.id}) – Reason: ${rawReason}`
+    : `Fine waiver requested for ${student.name} (${student.id}) – Reason: ${rawReason}`;
 
-  res.json({ success: true, waived, lateFine: student.lateFine });
+  const auditEntry = appendAudit('FEE_WAIVE', detail, body.role ?? 'ADMIN');
+
+  res.json({ success: true, waived, lateFine: student.lateFine, student, auditEntry });
 });
 
 api.post('/fees/bulk-remind', (req, res) => {

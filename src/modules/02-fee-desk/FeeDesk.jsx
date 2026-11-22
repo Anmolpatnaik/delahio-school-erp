@@ -39,7 +39,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
   const [drafts, setDrafts] = useState({});
   const [activeId, setActiveId] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [form, setForm] = useState({ cash: '', upi: '', discount: '', waiveFine: false, note: '' });
+  const [form, setForm] = useState({ cash: '', upi: '', discount: '', waiveFine: false, note: '', waiverReason: '' });
 
   useEffect(() => {
     setRows(students);
@@ -171,17 +171,15 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
       }
 
       if (payload.waiveFine && student.lateFine > 0) {
-        await postWaiveFine({ studentId: student.id, role });
+        await postWaiveFine({
+          studentId: student.id,
+          role,
+          reason: payload.waiverReason?.trim() || form.waiverReason?.trim() || 'Waived during fee payment',
+        });
       }
 
-      const entry = await recordAudit({
-        action: 'FEE_PAYMENT',
-        detail: `${result.receipt.receiptNo} ${result.receipt.mode} ${formatINR(result.receipt.total)} for ${student.name}`,
-        role,
-      });
-      onAudit(entry);
       onToast(`${student.name}: receipt ${result.receipt.receiptNo} generated`);
-      setForm({ cash: '', upi: '', discount: '', waiveFine: false, note: '' });
+      setForm({ cash: '', upi: '', discount: '', waiveFine: false, note: '', waiverReason: '' });
     } catch (error) {
       onToast(error.message, 'error');
     } finally {
@@ -190,17 +188,26 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
   }
 
   async function waiveFine(student) {
+    if (!form.waiverReason.trim()) {
+      onToast('Please enter a written reason to waive late fine.', 'error');
+      return;
+    }
     setBusyId(student.id);
     try {
-      const result = await postWaiveFine({ studentId: student.id, role });
-      setRows((previous) => previous.map((row) => (row.id === student.id ? { ...row, lateFine: 0 } : row)));
-      const entry = await recordAudit({
-        action: 'FEE_WAIVE',
-        detail: `Fine waiver of ${formatINR(result.waived)} processed for ${student.name}`,
+      const result = await postWaiveFine({
+        studentId: student.id,
         role,
+        reason: form.waiverReason.trim(),
       });
-      onAudit(entry);
+      setRows((previous) => previous.map((row) => (row.id === student.id ? { ...row, lateFine: 0 } : row)));
+      if (onPaymentSuccess && result.student) {
+        onPaymentSuccess({ student: result.student });
+      }
+      if (result.auditEntry && onAudit) {
+        onAudit(result.auditEntry);
+      }
       onToast(result.waived > 0 ? `Fine waived: ${formatINR(result.waived)}` : 'No fine pending on this student');
+      setForm((prev) => ({ ...prev, waiveFine: false, waiverReason: '' }));
     } catch (error) {
       onToast(error.message, 'error');
     } finally {
@@ -608,6 +615,22 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                       </label>
                     </div>
                   )}
+
+                  {can(role, 'waiveFine') && active && active.lateFine > 0 && (
+                    <div className="col-span-2">
+                      <label className="erp-label" htmlFor="waiverReason">
+                        Reason for fine waiver <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="waiverReason"
+                        value={form.waiverReason}
+                        onChange={(event) => setForm({ ...form, waiverReason: event.target.value })}
+                        className="erp-input w-full"
+                        placeholder="e.g. Principal approved / medical leave"
+                      />
+                    </div>
+                  )}
+
                   <div className="col-span-2">
                     <label className="erp-label" htmlFor="note">
                       Note
@@ -669,9 +692,10 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                 {can(role, 'waiveFine') && (
                   <button
                     type="button"
-                    disabled={busyId === active.id}
+                    disabled={busyId === active.id || !form.waiverReason.trim() || active.lateFine <= 0}
                     onClick={() => waiveFine(active)}
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
+                    title={active.lateFine <= 0 ? 'No late fine on this student' : !form.waiverReason.trim() ? 'Enter a reason to waive fine' : 'Waive late fine'}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
                   >
                     Waive fine
                   </button>
