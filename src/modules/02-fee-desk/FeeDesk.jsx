@@ -26,7 +26,7 @@ const STATUS_OPTIONS = [
   { id: 'CREDIT', label: 'Credit balance' },
 ];
 
-const EMPTY_DRAFT = { pay: '', discount: '', waive: false };
+
 
 
 
@@ -36,7 +36,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
   const [classFilter, setClassFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selected, setSelected] = useState(new Set());
-  const [drafts, setDrafts] = useState({});
+
   const [activeId, setActiveId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [form, setForm] = useState({ cash: '', upi: '', discount: '', waiveFine: false, note: '', waiverReason: '' });
@@ -74,40 +74,17 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
   const pendingBook = rows.reduce((total, student) => total + calculateStudentDues(student).pending, 0);
   const defaulters = rows.filter((student) => calculateStudentDues(student).pending > 0).length;
 
-  const columns = useMemo(() => {
-    const base = [
-      { key: 'select', label: '' },
-      { key: 'student', label: 'Student' },
-      { key: 'roll', label: 'Roll no' },
-      { key: 'class', label: 'Class' },
-      { key: 'parent', label: 'Parent' },
-      { key: 'phone', label: 'Phone' },
-      { key: 'address', label: 'Address' },
-      { key: 'tuition', label: 'Tuition' },
-      { key: 'scholarship', label: 'Scholarship %' },
-      { key: 'fine', label: 'Fine' },
-      { key: 'paid', label: 'Paid' },
-      { key: 'pending', label: 'Pending' },
+  const columns = [
+    { key: 'select', label: '' },
+    { key: 'student', label: 'Student' },
+    { key: 'class', label: 'Class' },
+    { key: 'phone', label: 'Parent Phone' },
+    { key: 'pending', label: 'Amount Due' },
+    { key: 'status', label: 'Status' },
+    { key: 'action', label: 'Action' },
+  ];
 
-      { key: 'payAmount', label: 'Pay amount' },
-      { key: 'discount', label: 'Discount' },
-      { key: 'waive', label: 'Waive fine' },
-      { key: 'actions', label: 'Actions' },
-    ];
 
-    let filtered = base;
-    if (!can(role, 'waiveFine')) filtered = filtered.filter((c) => c.key !== 'waive');
-    if (!can(role, 'applyDiscount')) filtered = filtered.filter((c) => c.key !== 'discount');
-    return filtered;
-  }, [role]);
-
-  function draftFor(id) {
-    return drafts[id] ?? EMPTY_DRAFT;
-  }
-
-  function updateDraft(id, patch) {
-    setDrafts((previous) => ({ ...previous, [id]: { ...(previous[id] ?? EMPTY_DRAFT), ...patch } }));
-  }
 
   function toggleRow(id) {
     setSelected((previous) => {
@@ -239,16 +216,6 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
     }
   }
 
-  function submitRowPayment(student) {
-    const draft = draftFor(student.id);
-    return collect(student, {
-      cash: Number(draft.pay || 0),
-      upi: 0,
-      discount: Number(draft.discount || 0),
-      waiveFine: Boolean(draft.waive),
-      note: 'Counter collection',
-    });
-  }
 
   function submitDetailPayment(student) {
     return collect(student, {
@@ -335,44 +302,39 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto border-y border-slate-200 bg-white">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto border-y border-slate-200 bg-white">
         <table className="w-full border-collapse text-left text-xs">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 shadow-sm">
             <tr>
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  className={`border-b border-slate-200 px-2 py-2 font-semibold ${column.key === 'select' ? 'w-10' : ''
-                    } ${['tuition', 'scholarship', 'fine', 'paid', 'pending'].includes(column.key) ? 'text-right' : ''}`}
-                >
-                  {column.key === 'select' ? (
-                    <input
-                      type="checkbox"
-                      aria-label="Select all students"
-                      checked={visibleRows.length > 0 && visibleRows.every((s) => selected.has(s.id))}
-                      onChange={toggleAll}
-                      className="h-3.5 w-3.5 rounded border-slate-300"
-                    />
-                  ) : (
-                    column.label
-                  )}
-                </th>
-              ))}
+              <th className="w-10 border-b border-slate-200 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  aria-label="Select all students"
+                  checked={visibleRows.length > 0 && visibleRows.every((s) => selected.has(s.id))}
+                  onChange={toggleAll}
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                />
+              </th>
+              <th className="border-b border-slate-200 px-3 py-2.5 font-semibold">Student</th>
+              <th className="border-b border-slate-200 px-3 py-2.5 font-semibold">Class</th>
+              <th className="border-b border-slate-200 px-3 py-2.5 font-semibold">Parent Phone</th>
+              <th className="border-b border-slate-200 px-3 py-2.5 text-right font-semibold">Amount Due</th>
+              <th className="border-b border-slate-200 px-3 py-2.5 text-center font-semibold">Status</th>
+              <th className="border-b border-slate-200 px-3 py-2.5 text-right font-semibold">Action</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {visibleRows.map((student) => {
               const rowDues = calculateStudentDues(student);
-              const draft = draftFor(student.id);
               const isSelected = selected.has(student.id);
 
               return (
                 <tr
                   key={student.id}
-                  className={`border-b border-slate-100 align-top ${isSelected ? 'bg-brand-50/60' : 'hover:bg-slate-50'
+                  className={`transition-colors ${isSelected ? 'bg-brand-50/60' : activeId === student.id ? 'bg-slate-100/70' : 'hover:bg-slate-50'
                     }`}
                 >
-                  <td className="px-2 py-2">
+                  <td className="px-3 py-2.5">
                     <input
                       type="checkbox"
                       aria-label={`Select ${student.name}`}
@@ -381,99 +343,54 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                       className="h-3.5 w-3.5 rounded border-slate-300"
                     />
                   </td>
-                  <td className="px-2 py-2">
-                    <p className="font-semibold leading-tight text-slate-800">{student.name}</p>
-                    <p className="text-[10px] text-slate-400">{student.id}</p>
+                  <td className="px-3 py-2.5">
+                    <p className="max-w-[220px] truncate font-semibold leading-tight text-slate-800" title={student.name}>
+                      {student.name}
+                    </p>
+                    <p className="text-[10px] text-slate-400">{student.id} · Roll {student.rollNo}</p>
                   </td>
-                  <td className="px-2 py-2 text-slate-600">{student.rollNo}</td>
-                  <td className="px-2 py-2 text-slate-600">
-                    {student.className}
-                    {student.section}
+                  <td className="px-3 py-2.5 text-slate-600">
+                    Class {student.className}-{student.section}
                   </td>
-                  <td className="px-2 py-2 text-slate-600">{student.parentName}</td>
-                  <td className="px-2 py-2 text-slate-600">{student.phone}</td>
-                  <td className="px-2 py-2 text-[10px] leading-snug text-slate-500">{student.address}</td>
-                  <td className="px-2 py-2 text-right text-slate-700">{formatINR(student.tuition)}</td>
-                  <td className="px-2 py-2 text-right text-slate-700">{student.scholarshipPct}%</td>
-                  <td className="px-2 py-2 text-right text-slate-700">{formatINR(student.lateFine)}</td>
-                  <td className="px-2 py-2 text-right text-slate-700">{formatINR(student.paidAmount)}</td>
-                  <td className={`px-2 py-2 text-right font-semibold ${rowDues.pending > 0 ? 'text-rose-600' : rowDues.pending < 0 ? 'text-violet-600' : 'text-emerald-600'}`}>
-                    {rowDues.pending < 0
-                      ? `Credit ₹${Math.abs(rowDues.pending).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : formatINR(rowDues.pending)}
+                  <td className="px-3 py-2.5 text-slate-600">
+                    <p>{student.phone}</p>
+                    <p className="text-[10px] text-slate-400">{student.parentName}</p>
                   </td>
-
-                  <td className="px-2 py-2">
-                    <input
-                      type="number"
-                      min="0"
-                      value={draft.pay}
-                      onChange={(event) => updateDraft(student.id, { pay: event.target.value })}
-                      placeholder="0"
-                      className="erp-input w-24 py-1 text-xs"
-                    />
+                  <td className="px-3 py-2.5 text-right font-semibold">
+                    {rowDues.pending < 0 ? (
+                      <span className="text-violet-600">
+                        Credit ₹{Math.abs(rowDues.pending).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : rowDues.pending === 0 ? (
+                      <span className="text-emerald-600">₹0.00</span>
+                    ) : (
+                      <span className="text-rose-600">{formatINR(rowDues.pending)}</span>
+                    )}
                   </td>
-                  {can(role, 'applyDiscount') && (
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={draft.discount}
-                        onChange={(event) => updateDraft(student.id, { discount: event.target.value })}
-                        placeholder="0"
-                        className="erp-input w-20 py-1 text-xs"
-                      />
-                    </td>
-                  )}
-                  {can(role, 'waiveFine') && (
-                    <td className="px-2 py-2">
-                      <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={draft.waive}
-                          onChange={(event) => updateDraft(student.id, { waive: event.target.checked })}
-                          className="h-3.5 w-3.5 rounded border-slate-300"
-                        />
-                        Fine
-                      </label>
-                    </td>
-                  )}
-                  <td className="px-2 py-2">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        title="Collect payment"
-                        disabled={busyId === student.id}
-                        onClick={() => submitRowPayment(student)}
-                        className="rounded-md bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 disabled:bg-slate-300"
-                      >
-                        <IndianRupee className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Reprint receipt"
-                        onClick={() => onToast(`Last receipt queued to counter printer for ${student.name}`, 'info')}
-                        className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100"
-                      >
-                        <Printer className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Send reminder"
-                        onClick={() => remind(student)}
-                        className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100"
-                      >
-                        <Bell className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Open student ledger"
-                        onClick={() => openStudent(student)}
-                        className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100"
-                      >
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                  <td className="px-3 py-2.5 text-center">
+                    {rowDues.pending < 0 ? (
+                      <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+                        Credit
+                      </span>
+                    ) : rowDues.pending === 0 ? (
+                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                        Cleared
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700">
+                        Overdue
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openStudent(student)}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-brand-600"
+                    >
+                      {rowDues.pending <= 0 ? 'View' : 'Collect'}
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
                   </td>
                 </tr>
               );
@@ -481,7 +398,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
 
             {visibleRows.length === 0 && (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-slate-400">
+                <td colSpan={7} className="px-3 py-10 text-center text-sm text-slate-400">
                   No fee rows match the current filters.
                 </td>
               </tr>
@@ -497,16 +414,17 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
       {active && (
         <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/40">
           <aside className="flex h-full w-[520px] flex-col bg-white shadow-2xl">
-            <div className="shrink-0 border-b border-slate-200 px-4 py-3">
+                       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                                <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     {active.id} · {active.feePlan}
                   </p>
-                  <h3 className="text-sm font-semibold leading-tight text-slate-900">{active.name}</h3>
-                  <p className="text-[11px] text-slate-500">
-                    Class {active.className}
-                    {active.section} · Roll {active.rollNo} · {active.parentName} · {active.phone}
+                  <h3 className="truncate text-sm font-semibold leading-tight text-slate-900" title={active.name}>
+                    {active.name}
+                  </h3>
+                  <p className="truncate text-[11px] text-slate-500">
+                    Class {active.className}{active.section} · Roll {active.rollNo} · {active.parentName} · {active.phone}
                   </p>
                 </div>
                 <button
@@ -653,18 +571,31 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
               </div>
 
               <div className="mt-4">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Payment history</p>
-                <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Payment history ({active.paymentHistory.length})
+                  </p>
+                  {active.paymentHistory.length > 3 && (
+                    <span className="text-[10px] text-slate-400">Scroll for older</span>
+                  )}
+                </div>
+                <ul className="max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
                   {active.paymentHistory.map((entry) => (
                     <li key={entry.receiptNo} className="flex items-center justify-between px-2 py-1.5 text-[11px]">
-                      <span className="text-slate-500">{entry.date}</span>
-                      <span className="font-mono text-[10px] text-slate-400">{entry.receiptNo}</span>
-                      <span className="text-slate-600">{entry.mode}</span>
-                      <span className="font-semibold text-slate-800">{formatINR(entry.amount)}</span>
+                      <div>
+                        <span className="font-mono text-[10px] text-slate-500">{entry.receiptNo}</span>
+                        <span className="ml-1.5 text-slate-400">· {entry.date}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-medium text-slate-600">
+                          {entry.mode}
+                        </span>
+                        <span className="font-semibold text-slate-800">{formatINR(entry.amount)}</span>
+                      </div>
                     </li>
                   ))}
                   {active.paymentHistory.length === 0 && (
-                    <li className="px-2 py-1.5 text-[11px] text-slate-400">No installments recorded yet.</li>
+                    <li className="px-2 py-3 text-center text-[11px] text-slate-400">No installments recorded yet.</li>
                   )}
                 </ul>
               </div>
