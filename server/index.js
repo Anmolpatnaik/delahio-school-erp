@@ -84,6 +84,17 @@ function parseAmount(value) {
   const amount = Number(value);
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
+const PERMISSIONS = {
+  ADMIN: { waiveFine: true, applyDiscount: true },
+  ACCOUNTANT: { waiveFine: true, applyDiscount: false },
+  RECEPTIONIST: { waiveFine: false, applyDiscount: false },
+};
+
+function roleCan(role, perm) {
+  return Boolean(PERMISSIONS[role]?.[perm]);
+}
+
+
 
 const api = express.Router();
 
@@ -107,6 +118,9 @@ api.post('/fees/pay', (req, res) => {
   const upi = parseAmount(body.upi);
   const discount = parseAmount(body.discount);
   const total = Number((cash + upi).toFixed(2));
+  if (discount > 0 && !roleCan(body.role, 'applyDiscount')) {
+    return res.status(403).json({ success: false, error: 'Your role cannot apply discounts.' });
+  }
 
   if (total === 0 && discount === 0) {
     return res.status(400).json({ success: false, error: 'Enter a cash or UPI amount before collecting' });
@@ -163,6 +177,9 @@ api.post('/fees/waive-fine', (req, res) => {
 
   if (!student) {
     return res.status(404).json({ success: false, error: 'Student record not found' });
+  }
+  if (!roleCan(body.role, 'waiveFine')) {
+    return res.status(403).json({ success: false, error: 'Your role cannot waive fines.' });
   }
 
   const waived = student.lateFine;

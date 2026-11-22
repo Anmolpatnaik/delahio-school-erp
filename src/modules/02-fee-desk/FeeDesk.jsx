@@ -61,6 +61,14 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
     });
   }, [rows, query, classFilter, statusFilter]);
 
+  useEffect(() => {
+    setSelected((prev) => {
+      const visibleIds = new Set(visibleRows.map((s) => s.id));
+      const pruned = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return pruned.size === prev.size ? prev : pruned;
+    });
+  }, [visibleRows]);
+
   const active = rows.find((student) => student.id === activeId) ?? null;
 
   const pendingBook = rows.reduce((total, student) => total + calculateStudentDues(student).pending, 0);
@@ -87,7 +95,10 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
       { key: 'actions', label: 'Actions' },
     ];
 
-    return can(role, 'waiveFine') ? base : base.filter((column) => column.key !== 'waive');
+    let filtered = base;
+    if (!can(role, 'waiveFine')) filtered = filtered.filter((c) => c.key !== 'waive');
+    if (!can(role, 'applyDiscount')) filtered = filtered.filter((c) => c.key !== 'discount');
+    return filtered;
   }, [role]);
 
   function draftFor(id) {
@@ -108,11 +119,19 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
   }
 
   function toggleAll() {
-    if (selected.size === students.length) {
-      setSelected(new Set());
-      return;
+    if (visibleRows.length > 0 && visibleRows.every((s) => selected.has(s.id))) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        visibleRows.forEach((s) => next.delete(s.id));
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        visibleRows.forEach((s) => next.add(s.id));
+        return next;
+      });
     }
-    setSelected(new Set(students.map((student) => student.id)));
   }
 
   function openStudent(student) {
@@ -323,7 +342,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                     <input
                       type="checkbox"
                       aria-label="Select all students"
-                      checked={selected.size > 0 && selected.size === students.length}
+                      checked={visibleRows.length > 0 && visibleRows.every((s) => selected.has(s.id))}
                       onChange={toggleAll}
                       className="h-3.5 w-3.5 rounded border-slate-300"
                     />
@@ -387,27 +406,31 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                       className="erp-input w-24 py-1 text-xs"
                     />
                   </td>
-                  <td className="px-2 py-2">
-                    <input
-                      type="number"
-                      min="0"
-                      value={draft.discount}
-                      onChange={(event) => updateDraft(student.id, { discount: event.target.value })}
-                      placeholder="0"
-                      className="erp-input w-20 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="px-2 py-2">
-                    <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                  {can(role, 'applyDiscount') && (
+                    <td className="px-2 py-2">
                       <input
-                        type="checkbox"
-                        checked={draft.waive}
-                        onChange={(event) => updateDraft(student.id, { waive: event.target.checked })}
-                        className="h-3.5 w-3.5 rounded border-slate-300"
+                        type="number"
+                        min="0"
+                        value={draft.discount}
+                        onChange={(event) => updateDraft(student.id, { discount: event.target.value })}
+                        placeholder="0"
+                        className="erp-input w-20 py-1 text-xs"
                       />
-                      Fine
-                    </label>
-                  </td>
+                    </td>
+                  )}
+                  {can(role, 'waiveFine') && (
+                    <td className="px-2 py-2">
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={draft.waive}
+                          onChange={(event) => updateDraft(student.id, { waive: event.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-slate-300"
+                        />
+                        Fine
+                      </label>
+                    </td>
+                  )}
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-1">
                       <button
@@ -556,31 +579,35 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                       placeholder="0"
                     />
                   </div>
-                  <div>
-                    <label className="erp-label" htmlFor="discount">
-                      Discount
-                    </label>
-                    <input
-                      id="discount"
-                      type="number"
-                      min="0"
-                      value={form.discount}
-                      onChange={(event) => setForm({ ...form, discount: event.target.value })}
-                      className="erp-input"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <label className="flex items-center gap-2 pb-1.5 text-[11px] text-slate-600">
+                  {can(role, 'applyDiscount') && (
+                    <div>
+                      <label className="erp-label" htmlFor="discount">
+                        Discount
+                      </label>
                       <input
-                        type="checkbox"
-                        checked={form.waiveFine}
-                        onChange={(event) => setForm({ ...form, waiveFine: event.target.checked })}
-                        className="h-3.5 w-3.5 rounded border-slate-300"
+                        id="discount"
+                        type="number"
+                        min="0"
+                        value={form.discount}
+                        onChange={(event) => setForm({ ...form, discount: event.target.value })}
+                        className="erp-input"
+                        placeholder="0"
                       />
-                      Waive late fine
-                    </label>
-                  </div>
+                    </div>
+                  )}
+                  {can(role, 'waiveFine') && (
+                    <div className="flex items-end">
+                      <label className="flex items-center gap-2 pb-1.5 text-[11px] text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={form.waiveFine}
+                          onChange={(event) => setForm({ ...form, waiveFine: event.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-slate-300"
+                        />
+                        Waive late fine
+                      </label>
+                    </div>
+                  )}
                   <div className="col-span-2">
                     <label className="erp-label" htmlFor="note">
                       Note
@@ -596,7 +623,7 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                   <div className="col-span-2 flex items-center justify-between rounded-md bg-slate-50 px-2 py-1.5 text-[11px]">
                     <span className="text-slate-500">Balance after this receipt</span>
                     <span className="font-semibold text-slate-800">
-                      {`\u20B9${active.paidAmount + form.cash + form.upi}`}
+                      {formatINR(round2(Number(active.paidAmount) + Number(form.cash || 0) + Number(form.upi || 0)))}
                     </span>
                   </div>
                 </div>
@@ -639,14 +666,16 @@ export default function FeeDesk({ students, school, role, onAudit, onToast, onPa
                   <Receipt className="h-4 w-4" />
                   {calculateStudentDues(active).pending <= 0 ? 'No payment due' : 'Record payment'}
                 </button>
-                <button
-                  type="button"
-                  disabled={busyId === active.id}
-                  onClick={() => waiveFine(active)}
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
-                >
-                  Waive fine
-                </button>
+                {can(role, 'waiveFine') && (
+                  <button
+                    type="button"
+                    disabled={busyId === active.id}
+                    onClick={() => waiveFine(active)}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
+                  >
+                    Waive fine
+                  </button>
+                )}
               </div>
             </div>
           </aside>
